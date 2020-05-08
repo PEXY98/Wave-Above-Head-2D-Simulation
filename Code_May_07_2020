@@ -1,0 +1,169 @@
+let video;
+let poseNet;
+let poses = [];
+let newX = 0.0;
+let newY = 0.0;
+let step = 0.0;
+let amplitude = 0.0;
+let theta = 0;
+let apparatusHeight = 100; //distance from top of canvas
+let dangleLength = 200; //length of dangling string
+let convergeNodeX = 1120;
+let convergeNodeY = 100;
+
+function setup() {
+  createCanvas(1280, 800);
+  video = createCapture(VIDEO);
+  video.size(640, 480);
+
+  // Create a new poseNet method with a single detection
+  poseNet = ml5.poseNet(video, modelReady);
+  // This sets up an event that fills the global variable "poses"
+  // with an array every time new poses are detected
+  poseNet.on('pose', function(results) {
+    poses = results;
+  });
+  // Hide the video element, and just show the canvas
+  video.hide();
+
+  // input_KnotR = createInput("D_knot movement (cm)");
+  // input_WheelNodeR = createInput("D_wheel (cm)");
+  // input_WheelToConverge = createInput("Wheel to converge (cm)");
+  // input_Converge = createInput("Wheel to top (cm)");
+  
+
+}
+
+function modelReady() {
+  select('#status').html('Model Loaded');
+}
+
+function draw() {
+
+  background(255);
+
+  //image(video, 0, 0, 640, 480);  
+  image(video, (width - 640) / 2, (height - 480) / 2, 640, 480);
+  fill(255, 0, 0);
+  noStroke();
+
+  //print(poses);
+  if (poses.length > 0 && poses[0].pose.leftEar.confidence > 0.2) {
+    newX = lerp(newX, poses[0].pose.leftEar.x, 0.5);
+    newY = lerp(newY, poses[0].pose.leftEar.y, 0.5);
+    //Left ear
+  } else if (poses.length > 0 && poses[0].pose.rightEar.confidence > 0.2) {
+    newX = lerp(newX, poses[0].pose.rightEar.x, 0.5);
+    newY = lerp(newY, poses[0].pose.rightEar.y, 0.5);
+    //Right ear
+  }
+
+  ellipse(newX + (width - 640) / 2, newY + (height - 480) / 2, 10, 10);
+  //drawKeypoints();
+  let wheelNodeArr = []
+  let waveArr = []
+  let knotPos = {
+    X: 0,
+    Y: 0,
+    R: 0
+  }
+  drawWheel(wheelNodeArr);
+  drawWire(wheelNodeArr, waveArr, knotPos);
+  lineLength(wheelNodeArr, waveArr, knotPos);
+}
+
+function drawWheel(wheelNodeArr) {
+  stroke(0);
+  strokeWeight(2);
+  noFill();
+
+  let phase = newX / 640;
+
+  for (let i = 0; i < 12; i++) {
+    let wheelNodeR = 50;
+    let wheelNodeX = wheelNodeR * cos(theta + i / 6 * PI) + 1120
+    let wheelNodeY = wheelNodeR * sin(theta + i / 6 * PI) + 400
+    ellipse(wheelNodeX, wheelNodeY, 10);
+    wheelNodeArr.push({
+      X: wheelNodeX,
+      Y: wheelNodeY,
+      R: wheelNodeR
+    })
+  }
+}
+
+function drawWire(wheelNodeArr, waveArr, knotPos) {
+  stroke(0);
+  strokeWeight(1);
+
+  let phase = newX / 640;
+
+  let prevWaveX = -1;
+  let prevWaveY = -1;
+
+  //knot
+  let knotR = 50
+  let knotX = knotR * cos(theta + (phase * 2 + 1) * PI) + 1120
+  let knotY = knotR * sin(theta + (phase * 2 + 1) * PI) + 400
+  knotPos.X = knotX
+  knotPos.Y = knotY
+  fill(0, 255, 0);
+  ellipse(knotX, knotY, 20);
+
+  for (let i = 0; i < 12; i++) {
+    //let wheelNodeX = 50 * sin(theta + i / 6 * PI) + 1120
+    //let wheelNodeY = 50 * cos(theta + i / 6 * PI) + 400
+    wheelNodeX = wheelNodeArr[i].X
+    wheelNodeY = wheelNodeArr[i].Y
+    let distChange = dist(knotX, knotY, wheelNodeX, wheelNodeY);
+    let waveX = (width - 640) / 2 + 640 / 11 * i;
+    let waveY = apparatusHeight + dangleLength - distChange;
+    waveArr.push({
+      X: waveX,
+      Y: waveY
+    })
+    //wave
+    if (prevWaveX > 0) {
+      let h = 120 * (1 - (dist(prevWaveX, prevWaveY, waveX, waveY) - 640 / 11) / 6);
+      colorMode(HSB);
+      stroke(h, 100, 50);
+      strokeWeight(6);
+      line(waveX, waveY, prevWaveX, prevWaveY);
+      colorMode(RGB);
+      strokeWeight(1);
+      stroke(0);
+    }
+
+    //dangling lines
+    line(waveX, apparatusHeight, waveX, waveY);
+
+    //converging lines
+    line(wheelNodeX, wheelNodeY, convergeNodeX, convergeNodeY);
+
+    //knot to wheel nodes lines
+    line(wheelNodeX, wheelNodeY, knotX, knotY);
+
+    //apparatus line
+    line(waveX, apparatusHeight, convergeNodeX, convergeNodeY);
+
+    prevWaveX = waveX;
+    prevWaveY = waveY;
+  }
+
+
+}
+
+//print out indivdual line lengths
+function lineLength(wheelNodeArr, waveArr, knotPos) {
+  //print(waveY - apparatusHeight + 
+  //      convergeNodeX -   waveX + 
+  //      dist(convergeNodeX, convergeNodeY, wheelNodeX, wheelNodeY) + 
+  //      dist(wheelNodeX, wheelNodeY, knotX, knotY))
+
+  for (let i = 0; i < 12; i++) {
+    length = waveArr[i].Y - apparatusHeight + convergeNodeX - waveArr[i].X + dist(convergeNodeX, convergeNodeY, wheelNodeArr[i].X, wheelNodeArr[i].Y) + dist(wheelNodeArr[i].X, wheelNodeArr[i].Y, knotPos.X, knotPos.Y)
+    length = Number(length).toFixed(4);
+    text(0);
+    text("line " + (i + 1) + " : " + length + " (cm)", 100, 650 + 12 * i);
+  }
+}
